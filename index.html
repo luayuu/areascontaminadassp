@@ -1,0 +1,663 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8">
+        <meta http-equiv="X-UA-Compatible" content="IE=edge">
+        <meta name="viewport" content="initial-scale=1,user-scalable=no,maximum-scale=1,width=device-width">
+        <meta name="mobile-web-app-capable" content="yes">
+        <meta name="apple-mobile-web-app-capable" content="yes">
+        <link rel="stylesheet" href="css/leaflet.css">
+        <link rel="stylesheet" href="css/L.Control.Layers.Tree.css">
+        <link rel="stylesheet" href="css/qgis2web.css">
+        <link rel="stylesheet" href="css/fontawesome-all.min.css">
+        <link rel="stylesheet" href="css/leaflet-search.css">
+        <link rel="stylesheet" href="css/leaflet.photon.css">
+        <link rel="stylesheet" href="css/leaflet-measure.css">
+        <style>
+        html, body, #map {
+            width: 100%;
+            height: 100%;
+            padding: 0;
+            margin: 0;
+        }
+        </style>
+        <title>Áreas Contaminadas no Estado de São Paulo feito com dados públicos por Luana Nery Mendes</title>
+    </head>
+    <body>
+<h1 style="
+  position: fixed;
+  top: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 2147483647;
+  font-family: sans-serif;
+  font-size: 16px;
+  margin: 0;
+  padding: 2px 8px;
+  background: rgba(255, 255, 255, 0.6);
+  text-align: center;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+  user-select: none;
+  pointer-events: none;
+  display: inline-block;
+  border-radius: 4px;
+">
+  Áreas Contaminadas no Estado de São Paulo
+</h1>
+<div style="
+  position: fixed;
+  bottom: 8px;
+  width: 100%;
+  text-align: center;
+  font-size: 9px;
+  color: #444;
+  font-family: Arial, sans-serif;
+  opacity: 0.85;
+  pointer-events: none;
+  user-select: none;
+  padding: 2px 10px;
+  box-sizing: border-box;
+  background: rgba(255, 255, 255, 0.5);
+  z-index: 9999;
+">
+  Mapa criado por Luana Nery Mendes como critério de avaliação da disciplina Geoestatística e Gerenciamento de Dados da PUC Minas,<br>pós em Gerenciamento de Áreas Contaminadas.
+</div>       <div id="map">
+        </div>
+        <script src="js/qgis2web_expressions.js"></script>
+        <script src="js/leaflet.js"></script>
+        <script src="js/L.Control.Layers.Tree.min.js"></script>
+        <script src="js/multi-style-layer.js"></script>
+        <script src="js/leaflet.rotatedMarker.js"></script>
+        <script src="js/leaflet.pattern.js"></script>
+        <script src="js/leaflet-hash.js"></script>
+        <script src="js/Autolinker.min.js"></script>
+        <script src="js/rbush.min.js"></script>
+        <script src="js/labelgun.min.js"></script>
+        <script src="js/labels.js"></script>
+        <script src="js/leaflet.photon.js"></script>
+        <script src="js/leaflet-measure.js"></script>
+        <script src="js/leaflet-search.js"></script>
+        <script src="data/SP_UF_2024_4.js"></script>
+        <script src="data/SP_RG_Intermediarias_2024_5.js"></script>
+        <script src="data/SP_RG_Imediatas_2024_6.js"></script>
+        <script src="data/SIGAM_Areas_Protegidas_PI_DG_UCs_Protecao_Integral_7.js"></script>
+        <script src="data/SIGAM_Areas_Protegidas_US_DG_UCs_Uso_Sustentavel_8.js"></script>
+        <script src="data/VWM_UC_ESTADUAL_REBIO_AUGUSTO_RUSCHI_POLPolygon_9.js"></script>
+        <script src="data/areas_contaminadas_wgs_10.js"></script>
+        <script>
+        var map = L.map('map', {
+            zoomControl:false, maxZoom:28, minZoom:1
+        }).fitBounds([[-27.06523604841822,-49.80929703332508],[-21.7827841253413,-44.18429703332508]]);
+        var hash = new L.Hash(map);
+        map.attributionControl.setPrefix('<a href="https://github.com/tomchadwin/qgis2web" target="_blank">qgis2web</a> &middot; <a href="https://leafletjs.com" title="A JS library for interactive maps">Leaflet</a> &middot; <a href="https://qgis.org">QGIS</a>');
+        var autolinker = new Autolinker({truncate: {length: 30, location: 'smart'}});
+        // remove popup's row if "visible-with-data"
+        function removeEmptyRowsFromPopupContent(content, feature) {
+         var tempDiv = document.createElement('div');
+         tempDiv.innerHTML = content;
+         var rows = tempDiv.querySelectorAll('tr');
+         for (var i = 0; i < rows.length; i++) {
+             var td = rows[i].querySelector('td.visible-with-data');
+             var key = td ? td.id : '';
+             if (td && td.classList.contains('visible-with-data') && feature.properties[key] == null) {
+                 rows[i].parentNode.removeChild(rows[i]);
+             }
+         }
+         return tempDiv.innerHTML;
+        }
+        // add class to format popup if it contains media
+		function addClassToPopupIfMedia(content, popup) {
+			var tempDiv = document.createElement('div');
+			tempDiv.innerHTML = content;
+			if (tempDiv.querySelector('td img')) {
+				popup._contentNode.classList.add('media');
+					// Delay to force the redraw
+					setTimeout(function() {
+						popup.update();
+					}, 10);
+			} else {
+				popup._contentNode.classList.remove('media');
+			}
+		}
+        var zoomControl = L.control.zoom({
+            position: 'topleft'
+        }).addTo(map);
+        var measureControl = new L.Control.Measure({
+            position: 'topleft',
+            primaryLengthUnit: 'meters',
+            secondaryLengthUnit: 'kilometers',
+            primaryAreaUnit: 'sqmeters',
+            secondaryAreaUnit: 'hectares'
+        });
+        measureControl.addTo(map);
+        document.getElementsByClassName('leaflet-control-measure-toggle')[0].innerHTML = '';
+        document.getElementsByClassName('leaflet-control-measure-toggle')[0].className += ' fas fa-ruler';
+        var bounds_group = new L.featureGroup([]);
+        function setBounds() {
+        }
+        map.createPane('pane_GoogleTerrain_0');
+        map.getPane('pane_GoogleTerrain_0').style.zIndex = 400;
+        var layer_GoogleTerrain_0 = L.tileLayer('https://mt1.google.com/vt/lyrs=p&x={x}&y={y}&z={z}', {
+            pane: 'pane_GoogleTerrain_0',
+            opacity: 1.0,
+            attribution: '<a href="https://www.google.at/permissions/geoguidelines/attr-guide.html">Map data ©2015 Google</a>',
+            minZoom: 1,
+            maxZoom: 28,
+            minNativeZoom: 0,
+            maxNativeZoom: 20
+        });
+        layer_GoogleTerrain_0;
+        map.addLayer(layer_GoogleTerrain_0);
+        map.createPane('pane_GoogleSatellite_1');
+        map.getPane('pane_GoogleSatellite_1').style.zIndex = 401;
+        var layer_GoogleSatellite_1 = L.tileLayer('https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}', {
+            pane: 'pane_GoogleSatellite_1',
+            opacity: 1.0,
+            attribution: '<a href="https://www.google.at/permissions/geoguidelines/attr-guide.html">Map data ©2015 Google</a>',
+            minZoom: 1,
+            maxZoom: 28,
+            minNativeZoom: 0,
+            maxNativeZoom: 20
+        });
+        layer_GoogleSatellite_1;
+        map.addLayer(layer_GoogleSatellite_1);
+        map.createPane('pane_GoogleRoad_2');
+        map.getPane('pane_GoogleRoad_2').style.zIndex = 402;
+        var layer_GoogleRoad_2 = L.tileLayer('https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}', {
+            pane: 'pane_GoogleRoad_2',
+            opacity: 1.0,
+            attribution: '<a href="https://www.google.at/permissions/geoguidelines/attr-guide.html">Map data ©2015 Google</a>',
+            minZoom: 1,
+            maxZoom: 28,
+            minNativeZoom: 0,
+            maxNativeZoom: 20
+        });
+        layer_GoogleRoad_2;
+        map.addLayer(layer_GoogleRoad_2);
+        map.createPane('pane_GoogleHybrid_3');
+        map.getPane('pane_GoogleHybrid_3').style.zIndex = 403;
+        var layer_GoogleHybrid_3 = L.tileLayer('https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', {
+            pane: 'pane_GoogleHybrid_3',
+            opacity: 1.0,
+            attribution: '<a href="https://www.google.at/permissions/geoguidelines/attr-guide.html">Map data ©2015 Google</a>',
+            minZoom: 1,
+            maxZoom: 28,
+            minNativeZoom: 0,
+            maxNativeZoom: 20
+        });
+        layer_GoogleHybrid_3;
+        map.addLayer(layer_GoogleHybrid_3);
+        function pop_SP_UF_2024_4(feature, layer) {
+            var popupContent = '<table>\
+                    <tr>\
+                        <td colspan="2">' + (feature.properties['NM_UF'] !== null ? autolinker.link(String(feature.properties['NM_UF']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                </table>';
+            var content = removeEmptyRowsFromPopupContent(popupContent, feature);
+			layer.on('popupopen', function(e) {
+				addClassToPopupIfMedia(content, e.popup);
+			});
+			layer.bindPopup(content, { maxHeight: 400 });
+        }
+
+        function style_SP_UF_2024_4_0() {
+            return {
+                pane: 'pane_SP_UF_2024_4',
+                opacity: 1,
+                color: 'rgba(6,108,199,1.0)',
+                dashArray: '',
+                lineCap: 'square',
+                lineJoin: 'bevel',
+                weight: 3.0,
+                fillOpacity: 0,
+                interactive: true,
+            }
+        }
+        map.createPane('pane_SP_UF_2024_4');
+        map.getPane('pane_SP_UF_2024_4').style.zIndex = 404;
+        map.getPane('pane_SP_UF_2024_4').style['mix-blend-mode'] = 'normal';
+        var layer_SP_UF_2024_4 = new L.geoJson(json_SP_UF_2024_4, {
+            attribution: '',
+            interactive: true,
+            dataVar: 'json_SP_UF_2024_4',
+            layerName: 'layer_SP_UF_2024_4',
+            pane: 'pane_SP_UF_2024_4',
+            onEachFeature: pop_SP_UF_2024_4,
+            style: style_SP_UF_2024_4_0,
+        });
+        bounds_group.addLayer(layer_SP_UF_2024_4);
+        map.addLayer(layer_SP_UF_2024_4);
+        function pop_SP_RG_Intermediarias_2024_5(feature, layer) {
+            var popupContent = '<table>\
+                    <tr>\
+                        <td colspan="2">' + (feature.properties['NM_RGINT'] !== null ? autolinker.link(String(feature.properties['NM_RGINT']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                </table>';
+            var content = removeEmptyRowsFromPopupContent(popupContent, feature);
+			layer.on('popupopen', function(e) {
+				addClassToPopupIfMedia(content, e.popup);
+			});
+			layer.bindPopup(content, { maxHeight: 400 });
+        }
+
+        function style_SP_RG_Intermediarias_2024_5_0() {
+            return {
+                pane: 'pane_SP_RG_Intermediarias_2024_5',
+                opacity: 1,
+                color: 'rgba(32,37,206,1.0)',
+                dashArray: '',
+                lineCap: 'butt',
+                lineJoin: 'miter',
+                weight: 1.0, 
+                fillOpacity: 0,
+                interactive: true,
+            }
+        }
+        map.createPane('pane_SP_RG_Intermediarias_2024_5');
+        map.getPane('pane_SP_RG_Intermediarias_2024_5').style.zIndex = 405;
+        map.getPane('pane_SP_RG_Intermediarias_2024_5').style['mix-blend-mode'] = 'normal';
+        var layer_SP_RG_Intermediarias_2024_5 = new L.geoJson(json_SP_RG_Intermediarias_2024_5, {
+            attribution: '',
+            interactive: true,
+            dataVar: 'json_SP_RG_Intermediarias_2024_5',
+            layerName: 'layer_SP_RG_Intermediarias_2024_5',
+            pane: 'pane_SP_RG_Intermediarias_2024_5',
+            onEachFeature: pop_SP_RG_Intermediarias_2024_5,
+            style: style_SP_RG_Intermediarias_2024_5_0,
+        });
+        bounds_group.addLayer(layer_SP_RG_Intermediarias_2024_5);
+        map.addLayer(layer_SP_RG_Intermediarias_2024_5);
+        function pop_SP_RG_Imediatas_2024_6(feature, layer) {
+            var popupContent = '<table>\
+                    <tr>\
+                        <td colspan="2">' + (feature.properties['NM_RGI'] !== null ? autolinker.link(String(feature.properties['NM_RGI']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                </table>';
+            var content = removeEmptyRowsFromPopupContent(popupContent, feature);
+			layer.on('popupopen', function(e) {
+				addClassToPopupIfMedia(content, e.popup);
+			});
+			layer.bindPopup(content, { maxHeight: 400 });
+        }
+
+        function style_SP_RG_Imediatas_2024_6_0() {
+            return {
+                pane: 'pane_SP_RG_Imediatas_2024_6',
+                opacity: 1,
+                color: 'rgba(15,179,255,1.0)',
+                dashArray: '',
+                lineCap: 'butt',
+                lineJoin: 'miter',
+                weight: 1.0, 
+                fillOpacity: 0,
+                interactive: true,
+            }
+        }
+        map.createPane('pane_SP_RG_Imediatas_2024_6');
+        map.getPane('pane_SP_RG_Imediatas_2024_6').style.zIndex = 406;
+        map.getPane('pane_SP_RG_Imediatas_2024_6').style['mix-blend-mode'] = 'normal';
+        var layer_SP_RG_Imediatas_2024_6 = new L.geoJson(json_SP_RG_Imediatas_2024_6, {
+            attribution: '',
+            interactive: true,
+            dataVar: 'json_SP_RG_Imediatas_2024_6',
+            layerName: 'layer_SP_RG_Imediatas_2024_6',
+            pane: 'pane_SP_RG_Imediatas_2024_6',
+            onEachFeature: pop_SP_RG_Imediatas_2024_6,
+            style: style_SP_RG_Imediatas_2024_6_0,
+        });
+        bounds_group.addLayer(layer_SP_RG_Imediatas_2024_6);
+        map.addLayer(layer_SP_RG_Imediatas_2024_6);
+        function pop_SIGAM_Areas_Protegidas_PI_DG_UCs_Protecao_Integral_7(feature, layer) {
+            var popupContent = '<table>\
+                    <tr>\
+                        <td colspan="2">' + (feature.properties['Unidade'] !== null ? autolinker.link(String(feature.properties['Unidade']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <td colspan="2">' + (feature.properties['Tipo_de_Un'] !== null ? autolinker.link(String(feature.properties['Tipo_de_Un']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <td colspan="2">' + (feature.properties['Categoria'] !== null ? autolinker.link(String(feature.properties['Categoria']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <td colspan="2">' + (feature.properties['OrgaoGesto'] !== null ? autolinker.link(String(feature.properties['OrgaoGesto']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                </table>';
+            var content = removeEmptyRowsFromPopupContent(popupContent, feature);
+			layer.on('popupopen', function(e) {
+				addClassToPopupIfMedia(content, e.popup);
+			});
+			layer.bindPopup(content, { maxHeight: 400 });
+        }
+
+        function style_SIGAM_Areas_Protegidas_PI_DG_UCs_Protecao_Integral_7_0() {
+            return {
+                pane: 'pane_SIGAM_Areas_Protegidas_PI_DG_UCs_Protecao_Integral_7',
+                opacity: 1,
+                color: 'rgba(35,35,35,1.0)',
+                dashArray: '',
+                lineCap: 'butt',
+                lineJoin: 'miter',
+                weight: 1.0, 
+                fill: true,
+                fillOpacity: 1,
+                fillColor: 'rgba(14,145,24,0.48627450980392156)',
+                interactive: true,
+            }
+        }
+        map.createPane('pane_SIGAM_Areas_Protegidas_PI_DG_UCs_Protecao_Integral_7');
+        map.getPane('pane_SIGAM_Areas_Protegidas_PI_DG_UCs_Protecao_Integral_7').style.zIndex = 407;
+        map.getPane('pane_SIGAM_Areas_Protegidas_PI_DG_UCs_Protecao_Integral_7').style['mix-blend-mode'] = 'normal';
+        var layer_SIGAM_Areas_Protegidas_PI_DG_UCs_Protecao_Integral_7 = new L.geoJson(json_SIGAM_Areas_Protegidas_PI_DG_UCs_Protecao_Integral_7, {
+            attribution: '',
+            interactive: true,
+            dataVar: 'json_SIGAM_Areas_Protegidas_PI_DG_UCs_Protecao_Integral_7',
+            layerName: 'layer_SIGAM_Areas_Protegidas_PI_DG_UCs_Protecao_Integral_7',
+            pane: 'pane_SIGAM_Areas_Protegidas_PI_DG_UCs_Protecao_Integral_7',
+            onEachFeature: pop_SIGAM_Areas_Protegidas_PI_DG_UCs_Protecao_Integral_7,
+            style: style_SIGAM_Areas_Protegidas_PI_DG_UCs_Protecao_Integral_7_0,
+        });
+        bounds_group.addLayer(layer_SIGAM_Areas_Protegidas_PI_DG_UCs_Protecao_Integral_7);
+        map.addLayer(layer_SIGAM_Areas_Protegidas_PI_DG_UCs_Protecao_Integral_7);
+        function pop_SIGAM_Areas_Protegidas_US_DG_UCs_Uso_Sustentavel_8(feature, layer) {
+            var popupContent = '<table>\
+                    <tr>\
+                        <td colspan="2">' + (feature.properties['Unidade'] !== null ? autolinker.link(String(feature.properties['Unidade']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <td colspan="2">' + (feature.properties['Tipo_de_Un'] !== null ? autolinker.link(String(feature.properties['Tipo_de_Un']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <td colspan="2">' + (feature.properties['Categoria'] !== null ? autolinker.link(String(feature.properties['Categoria']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <td colspan="2">' + (feature.properties['OrgaoGesto'] !== null ? autolinker.link(String(feature.properties['OrgaoGesto']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                </table>';
+            var content = removeEmptyRowsFromPopupContent(popupContent, feature);
+			layer.on('popupopen', function(e) {
+				addClassToPopupIfMedia(content, e.popup);
+			});
+			layer.bindPopup(content, { maxHeight: 400 });
+        }
+
+        function style_SIGAM_Areas_Protegidas_US_DG_UCs_Uso_Sustentavel_8_0() {
+            return {
+                pane: 'pane_SIGAM_Areas_Protegidas_US_DG_UCs_Uso_Sustentavel_8',
+                opacity: 1,
+                color: 'rgba(175,179,138,1.0)',
+                dashArray: '',
+                lineCap: 'butt',
+                lineJoin: 'miter',
+                weight: 1.0, 
+                fill: true,
+                fillOpacity: 1,
+                fillColor: 'rgba(241,244,199,0.43529411764705883)',
+                interactive: true,
+            }
+        }
+        function style_SIGAM_Areas_Protegidas_US_DG_UCs_Uso_Sustentavel_8_1() {
+            return {
+                pane: 'pane_SIGAM_Areas_Protegidas_US_DG_UCs_Uso_Sustentavel_8',
+                opacity: 1,
+                color: 'rgba(241,244,199,0.43529411764705883)',
+                dashArray: '',
+                lineCap: 'square',
+                lineJoin: 'bevel',
+                weight: 1.0,
+                fillOpacity: 0,
+                interactive: true,
+            }
+        }
+        map.createPane('pane_SIGAM_Areas_Protegidas_US_DG_UCs_Uso_Sustentavel_8');
+        map.getPane('pane_SIGAM_Areas_Protegidas_US_DG_UCs_Uso_Sustentavel_8').style.zIndex = 408;
+        map.getPane('pane_SIGAM_Areas_Protegidas_US_DG_UCs_Uso_Sustentavel_8').style['mix-blend-mode'] = 'normal';
+        var layer_SIGAM_Areas_Protegidas_US_DG_UCs_Uso_Sustentavel_8 = new L.geoJson.multiStyle(json_SIGAM_Areas_Protegidas_US_DG_UCs_Uso_Sustentavel_8, {
+            attribution: '',
+            interactive: true,
+            dataVar: 'json_SIGAM_Areas_Protegidas_US_DG_UCs_Uso_Sustentavel_8',
+            layerName: 'layer_SIGAM_Areas_Protegidas_US_DG_UCs_Uso_Sustentavel_8',
+            pane: 'pane_SIGAM_Areas_Protegidas_US_DG_UCs_Uso_Sustentavel_8',
+            onEachFeature: pop_SIGAM_Areas_Protegidas_US_DG_UCs_Uso_Sustentavel_8,
+            styles: [style_SIGAM_Areas_Protegidas_US_DG_UCs_Uso_Sustentavel_8_0,style_SIGAM_Areas_Protegidas_US_DG_UCs_Uso_Sustentavel_8_1,]
+        });
+        bounds_group.addLayer(layer_SIGAM_Areas_Protegidas_US_DG_UCs_Uso_Sustentavel_8);
+        map.addLayer(layer_SIGAM_Areas_Protegidas_US_DG_UCs_Uso_Sustentavel_8);
+        function pop_VWM_UC_ESTADUAL_REBIO_AUGUSTO_RUSCHI_POLPolygon_9(feature, layer) {
+            var popupContent = '<table>\
+                    <tr>\
+                        <td colspan="2">' + (feature.properties['Categoria'] !== null ? autolinker.link(String(feature.properties['Categoria']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <td colspan="2">' + (feature.properties['Tipo'] !== null ? autolinker.link(String(feature.properties['Tipo']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <td colspan="2">' + (feature.properties['Nome'] !== null ? autolinker.link(String(feature.properties['Nome']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <td colspan="2">' + (feature.properties['Label'] !== null ? autolinker.link(String(feature.properties['Label']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <td colspan="2">' + (feature.properties['Orgao_gest'] !== null ? autolinker.link(String(feature.properties['Orgao_gest']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <td colspan="2">' + (feature.properties['Ato_legal'] !== null ? autolinker.link(String(feature.properties['Ato_legal']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <td colspan="2">' + (feature.properties['Legislacao'] !== null ? autolinker.link(String(feature.properties['Legislacao']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <td colspan="2">' + (feature.properties['Link'] !== null ? autolinker.link(String(feature.properties['Link']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <td colspan="2">' + (feature.properties['Diretoria'] !== null ? autolinker.link(String(feature.properties['Diretoria']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <td colspan="2">' + (feature.properties['Municipio'] !== null ? autolinker.link(String(feature.properties['Municipio']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                </table>';
+            var content = removeEmptyRowsFromPopupContent(popupContent, feature);
+			layer.on('popupopen', function(e) {
+				addClassToPopupIfMedia(content, e.popup);
+			});
+			layer.bindPopup(content, { maxHeight: 400 });
+        }
+
+        function style_VWM_UC_ESTADUAL_REBIO_AUGUSTO_RUSCHI_POLPolygon_9_0() {
+            return {
+                pane: 'pane_VWM_UC_ESTADUAL_REBIO_AUGUSTO_RUSCHI_POLPolygon_9',
+                stroke: false, 
+                fill: true,
+                fillOpacity: 1,
+                fillColor: 'rgba(148,209,128,1.0)',
+                interactive: true,
+            }
+        }
+        map.createPane('pane_VWM_UC_ESTADUAL_REBIO_AUGUSTO_RUSCHI_POLPolygon_9');
+        map.getPane('pane_VWM_UC_ESTADUAL_REBIO_AUGUSTO_RUSCHI_POLPolygon_9').style.zIndex = 409;
+        map.getPane('pane_VWM_UC_ESTADUAL_REBIO_AUGUSTO_RUSCHI_POLPolygon_9').style['mix-blend-mode'] = 'normal';
+        var layer_VWM_UC_ESTADUAL_REBIO_AUGUSTO_RUSCHI_POLPolygon_9 = new L.geoJson(json_VWM_UC_ESTADUAL_REBIO_AUGUSTO_RUSCHI_POLPolygon_9, {
+            attribution: '',
+            interactive: true,
+            dataVar: 'json_VWM_UC_ESTADUAL_REBIO_AUGUSTO_RUSCHI_POLPolygon_9',
+            layerName: 'layer_VWM_UC_ESTADUAL_REBIO_AUGUSTO_RUSCHI_POLPolygon_9',
+            pane: 'pane_VWM_UC_ESTADUAL_REBIO_AUGUSTO_RUSCHI_POLPolygon_9',
+            onEachFeature: pop_VWM_UC_ESTADUAL_REBIO_AUGUSTO_RUSCHI_POLPolygon_9,
+            style: style_VWM_UC_ESTADUAL_REBIO_AUGUSTO_RUSCHI_POLPolygon_9_0,
+        });
+        bounds_group.addLayer(layer_VWM_UC_ESTADUAL_REBIO_AUGUSTO_RUSCHI_POLPolygon_9);
+        map.addLayer(layer_VWM_UC_ESTADUAL_REBIO_AUGUSTO_RUSCHI_POLPolygon_9);
+        function pop_areas_contaminadas_wgs_10(feature, layer) {
+            var popupContent = '<table>\
+                    <tr>\
+                        <td colspan="2">' + (feature.properties['Tipo'] !== null ? autolinker.link(String(feature.properties['Tipo']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <td colspan="2">' + (feature.properties['Classificacao Atual'] !== null ? autolinker.link(String(feature.properties['Classificacao Atual']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <td colspan="2">' + (feature.properties['Grupo de Contaminantes'] !== null ? autolinker.link(String(feature.properties['Grupo de Contaminantes']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                </table>';
+            var content = removeEmptyRowsFromPopupContent(popupContent, feature);
+			layer.on('popupopen', function(e) {
+				addClassToPopupIfMedia(content, e.popup);
+			});
+			layer.bindPopup(content, { maxHeight: 400 });
+        }
+
+        function style_areas_contaminadas_wgs_10_0(feature) {
+            switch(String(feature.properties['Classificacao Atual'])) {
+                case 'Area Contaminada com Risco Confirmado (ACRi)':
+                    return {
+                pane: 'pane_areas_contaminadas_wgs_10',
+                radius: 4.0,
+                opacity: 1,
+                color: 'rgba(35,35,35,1.0)',
+                dashArray: '',
+                lineCap: 'butt',
+                lineJoin: 'miter',
+                weight: 1,
+                fill: true,
+                fillOpacity: 1,
+                fillColor: 'rgba(193,9,59,1.0)',
+                interactive: true,
+            }
+                    break;
+                case 'Area Contaminada em Processo de Remediacao (ACRe)':
+                    return {
+                pane: 'pane_areas_contaminadas_wgs_10',
+                radius: 4.0,
+                opacity: 1,
+                color: 'rgba(35,35,35,1.0)',
+                dashArray: '',
+                lineCap: 'butt',
+                lineJoin: 'miter',
+                weight: 1,
+                fill: true,
+                fillOpacity: 1,
+                fillColor: 'rgba(235,238,41,1.0)',
+                interactive: true,
+            }
+                    break;
+                case 'Area Contaminada em Processo de Reutilizacao (ACRu)':
+                    return {
+                pane: 'pane_areas_contaminadas_wgs_10',
+                radius: 4.0,
+                opacity: 1,
+                color: 'rgba(35,35,35,1.0)',
+                dashArray: '',
+                lineCap: 'butt',
+                lineJoin: 'miter',
+                weight: 1,
+                fill: true,
+                fillOpacity: 1,
+                fillColor: 'rgba(31,36,203,1.0)',
+                interactive: true,
+            }
+                    break;
+                case 'Area Contaminada sob Investigacao (ACI)':
+                    return {
+                pane: 'pane_areas_contaminadas_wgs_10',
+                radius: 4.0,
+                opacity: 1,
+                color: 'rgba(35,35,35,1.0)',
+                dashArray: '',
+                lineCap: 'butt',
+                lineJoin: 'miter',
+                weight: 1,
+                fill: true,
+                fillOpacity: 1,
+                fillColor: 'rgba(0,0,0,1.0)',
+                interactive: true,
+            }
+                    break;
+                case 'Area em Processo de Monitoramento para Encerramento (AME)':
+                    return {
+                pane: 'pane_areas_contaminadas_wgs_10',
+                radius: 4.0,
+                opacity: 1,
+                color: 'rgba(35,35,35,1.0)',
+                dashArray: '',
+                lineCap: 'butt',
+                lineJoin: 'miter',
+                weight: 1,
+                fill: true,
+                fillOpacity: 1,
+                fillColor: 'rgba(20,213,36,1.0)',
+                interactive: true,
+            }
+                    break;
+                case 'Area Reabilitada para o Uso Declarado (AR)':
+                    return {
+                pane: 'pane_areas_contaminadas_wgs_10',
+                radius: 4.0,
+                opacity: 1,
+                color: 'rgba(35,35,35,1.0)',
+                dashArray: '',
+                lineCap: 'butt',
+                lineJoin: 'miter',
+                weight: 1,
+                fill: true,
+                fillOpacity: 1,
+                fillColor: 'rgba(255,39,194,1.0)',
+                interactive: true,
+            }
+                    break;
+            }
+        }
+        map.createPane('pane_areas_contaminadas_wgs_10');
+        map.getPane('pane_areas_contaminadas_wgs_10').style.zIndex = 410;
+        map.getPane('pane_areas_contaminadas_wgs_10').style['mix-blend-mode'] = 'normal';
+        var layer_areas_contaminadas_wgs_10 = new L.geoJson(json_areas_contaminadas_wgs_10, {
+            attribution: '',
+            interactive: true,
+            dataVar: 'json_areas_contaminadas_wgs_10',
+            layerName: 'layer_areas_contaminadas_wgs_10',
+            pane: 'pane_areas_contaminadas_wgs_10',
+            onEachFeature: pop_areas_contaminadas_wgs_10,
+            pointToLayer: function (feature, latlng) {
+                var context = {
+                    feature: feature,
+                    variables: {}
+                };
+                return L.circleMarker(latlng, style_areas_contaminadas_wgs_10_0(feature));
+            },
+        });
+        bounds_group.addLayer(layer_areas_contaminadas_wgs_10);
+        map.addLayer(layer_areas_contaminadas_wgs_10);
+        var overlaysTree = [
+            {label: 'areas_contaminadas_wgs<br /><table><tr><td style="text-align: center;"><img src="legend/areas_contaminadas_wgs_10_AreaContaminadacomRiscoConfirmadoACRi0.png" /></td><td>Area Contaminada com Risco Confirmado (ACRi)</td></tr><tr><td style="text-align: center;"><img src="legend/areas_contaminadas_wgs_10_AreaContaminadaemProcessodeRemediacaoACRe1.png" /></td><td>Area Contaminada em Processo de Remediacao (ACRe)</td></tr><tr><td style="text-align: center;"><img src="legend/areas_contaminadas_wgs_10_AreaContaminadaemProcessodeReutilizacaoACRu2.png" /></td><td>Area Contaminada em Processo de Reutilizacao (ACRu)</td></tr><tr><td style="text-align: center;"><img src="legend/areas_contaminadas_wgs_10_AreaContaminadasobInvestigacaoACI3.png" /></td><td>Area Contaminada sob Investigacao (ACI)</td></tr><tr><td style="text-align: center;"><img src="legend/areas_contaminadas_wgs_10_AreaemProcessodeMonitoramentoparaEncerramentoAME4.png" /></td><td>Area em Processo de Monitoramento para Encerramento (AME)</td></tr><tr><td style="text-align: center;"><img src="legend/areas_contaminadas_wgs_10_AreaReabilitadaparaoUsoDeclaradoAR5.png" /></td><td>Area Reabilitada para o Uso Declarado (AR)</td></tr></table>', layer: layer_areas_contaminadas_wgs_10},
+            {label: '<img src="legend/VWM_UC_ESTADUAL_REBIO_AUGUSTO_RUSCHI_POLPolygon_9.png" /> VWM_UC_ESTADUAL_REBIO_AUGUSTO_RUSCHI_POLPolygon', layer: layer_VWM_UC_ESTADUAL_REBIO_AUGUSTO_RUSCHI_POLPolygon_9},
+            {label: '<img src="legend/SIGAM_Areas_Protegidas_US_DG_UCs_Uso_Sustentavel_8.png" /> SIGAM_Areas_Protegidas_US_DG_UCs_Uso_Sustentavel', layer: layer_SIGAM_Areas_Protegidas_US_DG_UCs_Uso_Sustentavel_8},
+            {label: '<img src="legend/SIGAM_Areas_Protegidas_PI_DG_UCs_Protecao_Integral_7.png" /> SIGAM_Areas_Protegidas_PI_DG_UCs_Protecao_Integral', layer: layer_SIGAM_Areas_Protegidas_PI_DG_UCs_Protecao_Integral_7},
+            {label: '<img src="legend/SP_RG_Imediatas_2024_6.png" /> SP_RG_Imediatas_2024', layer: layer_SP_RG_Imediatas_2024_6},
+            {label: '<img src="legend/SP_RG_Intermediarias_2024_5.png" /> SP_RG_Intermediarias_2024', layer: layer_SP_RG_Intermediarias_2024_5},
+            {label: '<img src="legend/SP_UF_2024_4.png" /> SP_UF_2024', layer: layer_SP_UF_2024_4},
+            {label: "Google Hybrid", layer: layer_GoogleHybrid_3},
+            {label: "Google Road", layer: layer_GoogleRoad_2},
+            {label: "Google Satellite", layer: layer_GoogleSatellite_1},
+            {label: "Google Terrain", layer: layer_GoogleTerrain_0},]
+        var lay = L.control.layers.tree(null, overlaysTree,{
+            //namedToggle: true,
+            //selectorBack: false,
+            //closedSymbol: '&#8862; &#x1f5c0;',
+            //openedSymbol: '&#8863; &#x1f5c1;',
+            //collapseAll: 'Collapse all',
+            //expandAll: 'Expand all',
+            collapsed: true,
+        });
+        lay.addTo(map);
+        setBounds();
+        map.addControl(new L.Control.Search({
+            layer: layer_areas_contaminadas_wgs_10,
+            initial: false,
+            hideMarkerOnCollapse: true,
+            propertyName: 'Nome'}));
+        if (typeof url === 'undefined') {
+            document.getElementsByClassName('search-button')[0].className += ' fa fa-binoculars';
+        } else {
+            document.getElementsByClassName('search-button')[1].className += ' fa fa-binoculars';
+        }
+        </script>
+    </body>
+</html>
